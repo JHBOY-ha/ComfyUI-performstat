@@ -1,6 +1,6 @@
 # ComfyUI-performstat
 [中文文档](README_ZH.md)  
-Simple ComfyUI custom node that reports RAM and GPU usage.
+A lightweight ComfyUI monitoring plugin showing memory and GPU usage in real time.
 
   <img src="pic/example.png" width="250">  
 
