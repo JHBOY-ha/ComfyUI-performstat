@@ -26,7 +26,8 @@ Then restart ComfyUI.
 
 Add node: `Performance Stats (CPU/GPU)` and connect its output to a text display node.
 
-Top bar: after restart, the status bar is embedded into the workflow toolbar when possible (fixed fallback), refreshing every 1s.
+Floating panel: after restart, a compact floating panel appears (1s refresh), always on top.
+You can drag the panel with mouse, and press `N` to show/hide quickly.
 You can toggle bar visibility and metric items in ComfyUI settings:
 - PerformStat: Enable Top Bar
 - PerformStat: Show Memory

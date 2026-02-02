@@ -1,421 +1,363 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
-const BAR_ID = "performstat-bar";
+const PANEL_ID = "performstat-panel";
 const STYLE_ID = "performstat-style";
 const REFRESH_MS = 1000;
 const STORE_PREFIX = "performstat.";
 
 const state = {
-  enabled: true,
-  showMemory: true,
-  showGpu: true,
-  showVram: true,
-  showTemp: true,
+  visible: readBool("visible", true),
+  showMemory: readBool("showMemory", true),
+  showGpu: readBool("showGpu", true),
+  showVram: readBool("showVram", true),
+  showTemp: readBool("showTemp", true),
 };
 
+function readBool(key, fallback) {
+  const value = localStorage.getItem(STORE_PREFIX + key);
+  if (value == null) return fallback;
+  return value === "true";
+}
+
+function writeBool(key, value) {
+  localStorage.setItem(STORE_PREFIX + key, value ? "true" : "false");
+}
+
+function readPos() {
+  const x = Number(localStorage.getItem(STORE_PREFIX + "x"));
+  const y = Number(localStorage.getItem(STORE_PREFIX + "y"));
+  if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
+  return { x: 16, y: 74 };
+}
+
+function writePos(x, y) {
+  localStorage.setItem(STORE_PREFIX + "x", String(x));
+  localStorage.setItem(STORE_PREFIX + "y", String(y));
+}
+
 function ensureStyle() {
-  if (document.getElementById(STYLE_ID)) {
-    return;
-  }
+  if (document.getElementById(STYLE_ID)) return;
   const style = document.createElement("style");
   style.id = STYLE_ID;
   style.textContent = `
-:root {
-  --ps-bg: rgba(10, 12, 18, 0.92);
-  --ps-border: rgba(255, 255, 255, 0.08);
-  --ps-text: #e8eef5;
-  --ps-muted: #9aa6b2;
-  --ps-ram: #5ad6a1;
-  --ps-gpu: #5aa4f6;
-  --ps-vram: #f6c45a;
-}
-
-body.ps-has-performstat {
-  --ps-top-offset: 52px;
-}
-
-body.ps-has-performstat.ps-fixed-mode {
-  padding-top: calc(var(--ps-top-offset) + 46px);
-}
-
-#${BAR_ID} {
-  position: relative;
-  left: 0;
-  right: 0;
-  z-index: 9999;
-  display: grid;
-  grid-template-columns: 220px 1fr;
-  gap: 12px;
-  padding: 8px 14px 9px;
-  background: var(--ps-bg);
-  color: var(--ps-text);
-  border-bottom: 1px solid var(--ps-border);
+#${PANEL_ID} {
+  position: fixed;
+  left: 16px;
+  top: 74px;
+  z-index: 2147483647;
+  width: 420px;
+  max-width: min(420px, calc(100vw - 24px));
+  color: #dce5f1;
+  background: rgba(8, 12, 20, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
   font-family: "Fira Code", "JetBrains Mono", "Menlo", monospace;
   font-size: 12px;
   letter-spacing: 0.1px;
-  backdrop-filter: blur(6px);
+  user-select: none;
 }
 
-#${BAR_ID}.ps-inline {
-  position: static;
-  margin-left: 10px;
-  width: min(620px, 44vw);
-  min-width: 360px;
-  padding: 6px 10px 7px;
-  border: 1px solid var(--ps-border);
-  border-radius: 12px;
+#${PANEL_ID}.ps-hidden {
+  display: none;
 }
 
-#${BAR_ID}.ps-fixed {
-  position: fixed;
-  top: var(--ps-top-offset);
-}
-
-#${BAR_ID} .ps-item {
+#${PANEL_ID} .ps-head {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: move;
+  color: #9fb0c3;
 }
 
-#${BAR_ID} .ps-label {
-  font-size: 10px;
+#${PANEL_ID} .ps-title {
   text-transform: uppercase;
-  color: var(--ps-muted);
+  font-size: 10px;
   letter-spacing: 0.8px;
 }
 
-#${BAR_ID} .ps-bar {
-  height: 6px;
+#${PANEL_ID} .ps-body {
+  padding: 8px 10px 9px;
+  display: grid;
+  gap: 8px;
+}
+
+#${PANEL_ID} .ps-block {
+  display: grid;
+  gap: 4px;
+}
+
+#${PANEL_ID} .ps-label {
+  font-size: 10px;
+  color: #93a2b3;
+  text-transform: uppercase;
+}
+
+#${PANEL_ID} .ps-meta {
+  color: #a8b6c8;
+}
+
+#${PANEL_ID} .ps-bar {
+  height: 4px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
   overflow: hidden;
 }
 
-#${BAR_ID} .ps-bar span {
-  display: block;
+#${PANEL_ID} .ps-fill {
   height: 100%;
-  width: 0;
+  width: 0%;
   border-radius: 999px;
-  transition: width 0.3s ease;
+  transition: width 0.25s ease;
 }
 
-#${BAR_ID} .ps-meta {
-  color: var(--ps-muted);
-  font-size: 11px;
+#${PANEL_ID} .ps-fill-mem { background: #48d0a0; }
+#${PANEL_ID} .ps-fill-gpu { background: #5f8ff8; }
+#${PANEL_ID} .ps-fill-vram { background: #f3c75f; }
+
+#${PANEL_ID} .ps-gpu-list {
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+  padding-right: 4px;
 }
 
-#${BAR_ID} .ps-gpu-list {
+#${PANEL_ID} .ps-gpu {
+  display: grid;
+  gap: 3px;
+  padding: 4px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+#${PANEL_ID} .ps-gpu:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+#${PANEL_ID} .ps-row {
   display: flex;
-  flex-direction: column;
+  justify-content: space-between;
   gap: 8px;
 }
 
-#${BAR_ID} .ps-gpu-row {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 4px;
-}
-
-#${BAR_ID} .ps-gpu-name {
+#${PANEL_ID} .ps-name {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-#${BAR_ID} .ps-bars {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
+#${PANEL_ID} .ps-warn {
+  color: #f3c75f;
 }
 
-#${BAR_ID} .ps-warn {
-  color: #f6c45a;
-}
-
-#${BAR_ID}.ps-hidden {
-  display: none;
-}
-
-#${BAR_ID}.ps-no-memory .ps-memory {
-  display: none;
-}
-
-#${BAR_ID}.ps-no-gpu .ps-gpu {
-  display: none;
-}
-
-#${BAR_ID}.ps-no-vram .ps-vram-wrap {
-  display: none;
-}
-
-#${BAR_ID}.ps-no-temp .ps-temp {
-  display: none;
-}
-
-@media (max-width: 860px) {
-  #${BAR_ID} {
-    grid-template-columns: 1fr;
-  }
-  #${BAR_ID}.ps-inline {
-    width: min(96vw, 620px);
-    min-width: 0;
-    margin-left: 0;
-  }
-  #${BAR_ID} .ps-bars {
-    grid-template-columns: 1fr;
+@media (max-width: 640px) {
+  #${PANEL_ID} {
+    width: calc(100vw - 16px);
   }
 }
 `;
   document.head.appendChild(style);
-  document.body.classList.add("ps-has-performstat");
 }
 
-function ensureBar() {
-  let bar = document.getElementById(BAR_ID);
-  if (bar) {
-    return bar;
-  }
-  bar = document.createElement("div");
-  bar.id = BAR_ID;
-  bar.innerHTML = `
-    <div class="ps-item ps-memory">
-      <div class="ps-label">Memory</div>
-      <div class="ps-bar"><span data-ps="ram-bar"></span></div>
-      <div class="ps-meta" data-ps="ram-meta">Loading...</div>
+function ensurePanel() {
+  let panel = document.getElementById(PANEL_ID);
+  if (panel) return panel;
+  panel = document.createElement("div");
+  panel.id = PANEL_ID;
+  panel.innerHTML = `
+    <div class="ps-head" data-ps="drag-handle">
+      <div class="ps-title">PerformStat</div>
+      <div class="ps-meta">N: Show/Hide</div>
     </div>
-    <div class="ps-item ps-gpu">
-      <div class="ps-label">GPU</div>
-      <div class="ps-gpu-list" data-ps="gpu-list"></div>
+    <div class="ps-body">
+      <div class="ps-block" data-ps="memory-block">
+        <div class="ps-label">Memory</div>
+        <div class="ps-bar"><div class="ps-fill ps-fill-mem" data-ps="mem-fill"></div></div>
+        <div class="ps-meta" data-ps="mem-meta">Loading...</div>
+      </div>
+      <div class="ps-block" data-ps="gpu-block">
+        <div class="ps-label">GPU</div>
+        <div class="ps-gpu-list" data-ps="gpu-list"></div>
+      </div>
     </div>
   `;
-  mountBar(bar);
-  applyLayoutMode(bar);
-  applyVisibility();
-  return bar;
+  document.body.appendChild(panel);
+  applyPosition(panel);
+  applyVisibility(panel);
+  setupDrag(panel);
+  return panel;
 }
 
-function findWorkflowContainer() {
-  const selectors = [
-    ".comfyui-menu-right",
-    ".comfyui-workflow-controls",
-    ".comfyui-topbar-right",
-    ".comfy-menu-right",
-    ".top-right",
-    ".comfyui-menu",
-  ];
-  for (const selector of selectors) {
-    const el = document.querySelector(selector);
-    if (el) return el;
-  }
+function applyPosition(panel) {
+  const pos = readPos();
+  const maxX = Math.max(0, window.innerWidth - panel.offsetWidth - 8);
+  const maxY = Math.max(0, window.innerHeight - panel.offsetHeight - 8);
+  const x = Math.max(8, Math.min(pos.x, maxX));
+  const y = Math.max(8, Math.min(pos.y, maxY));
+  panel.style.left = `${x}px`;
+  panel.style.top = `${y}px`;
+}
 
-  const runLike = Array.from(document.querySelectorAll("button, div")).find((el) => {
-    const text = (el.textContent || "").trim();
-    return /^(run|queue|运行)$/i.test(text) || /(run|queue|运行)/i.test(text);
+function setupDrag(panel) {
+  const handle = panel.querySelector(`[data-ps="drag-handle"]`);
+  if (!handle) return;
+  let dragging = false;
+  let dx = 0;
+  let dy = 0;
+
+  handle.addEventListener("pointerdown", (event) => {
+    dragging = true;
+    const rect = panel.getBoundingClientRect();
+    dx = event.clientX - rect.left;
+    dy = event.clientY - rect.top;
+    handle.setPointerCapture(event.pointerId);
   });
-  if (!runLike) return null;
 
-  let cur = runLike;
-  while (cur && cur !== document.body) {
-    const rect = cur.getBoundingClientRect();
-    if (rect.top < 140 && rect.height >= 36 && rect.height <= 120 && rect.width >= 400) {
-      return cur;
-    }
-    cur = cur.parentElement;
-  }
-  return null;
-}
-
-function mountBar(bar) {
-  const workflowContainer = findWorkflowContainer();
-  if (workflowContainer) {
-    workflowContainer.appendChild(bar);
-    bar.dataset.psMounted = "inline";
-    bar.classList.add("ps-inline");
-    bar.classList.remove("ps-fixed");
-    return;
-  }
-
-  document.body.appendChild(bar);
-  bar.dataset.psMounted = "fixed";
-  bar.classList.remove("ps-inline");
-}
-
-function getTopOffset() {
-  const candidates = document.querySelectorAll(
-    ".comfyui-menu, #comfyui-menu, .comfy-menu, .top-panel, header"
-  );
-  let maxBottom = 0;
-  candidates.forEach((el) => {
-    const rect = el.getBoundingClientRect();
-    if (rect.bottom > maxBottom) {
-      maxBottom = rect.bottom;
-    }
+  handle.addEventListener("pointermove", (event) => {
+    if (!dragging) return;
+    const maxX = Math.max(8, window.innerWidth - panel.offsetWidth - 8);
+    const maxY = Math.max(8, window.innerHeight - panel.offsetHeight - 8);
+    const x = Math.max(8, Math.min(event.clientX - dx, maxX));
+    const y = Math.max(8, Math.min(event.clientY - dy, maxY));
+    panel.style.left = `${x}px`;
+    panel.style.top = `${y}px`;
   });
-  return Math.max(0, Math.ceil(maxBottom + 4));
+
+  handle.addEventListener("pointerup", (event) => {
+    if (!dragging) return;
+    dragging = false;
+    handle.releasePointerCapture(event.pointerId);
+    writePos(parseInt(panel.style.left, 10), parseInt(panel.style.top, 10));
+  });
 }
 
-function applyLayoutMode(bar) {
-  if (!bar) return;
-  document.body.classList.remove("ps-fixed-mode");
-  bar.classList.remove("ps-fixed");
-
-  if (bar.dataset.psMounted !== "fixed") {
-    document.body.classList.remove("ps-fixed-mode");
-    return;
-  }
-
-  const topOffset = getTopOffset();
-  document.body.style.setProperty("--ps-top-offset", `${topOffset}px`);
-  bar.classList.add("ps-fixed");
-  document.body.classList.add("ps-fixed-mode");
+function applyVisibility(panel) {
+  if (!panel) return;
+  panel.classList.toggle("ps-hidden", !state.visible);
+  const memoryBlock = panel.querySelector(`[data-ps="memory-block"]`);
+  const gpuBlock = panel.querySelector(`[data-ps="gpu-block"]`);
+  if (memoryBlock) memoryBlock.style.display = state.showMemory ? "" : "none";
+  if (gpuBlock) gpuBlock.style.display = state.showGpu ? "" : "none";
 }
 
-function readBoolSetting(key, defaultValue) {
-  const raw = localStorage.getItem(STORE_PREFIX + key);
-  if (raw == null) return defaultValue;
-  return raw === "true";
-}
-
-function writeBoolSetting(key, value) {
-  localStorage.setItem(STORE_PREFIX + key, value ? "true" : "false");
-}
-
-function applyVisibility() {
-  const bar = document.getElementById(BAR_ID);
-  if (!bar) return;
-
-  bar.classList.toggle("ps-hidden", !state.enabled);
-  bar.classList.toggle("ps-no-memory", !state.showMemory);
-  const hideGpuBlock = !state.showGpu && !state.showVram && !state.showTemp;
-  bar.classList.toggle("ps-no-gpu", hideGpuBlock);
-  bar.classList.toggle("ps-no-vram", !state.showVram);
-  bar.classList.toggle("ps-no-temp", !state.showTemp);
-  if (bar.dataset.psMounted === "fixed") {
-    document.body.classList.toggle(
-      "ps-fixed-mode",
-      state.enabled && bar.classList.contains("ps-fixed")
-    );
-  } else {
-    document.body.classList.remove("ps-fixed-mode");
-  }
-}
-
-function registerSetting(id, name, key, defaultValue) {
-  const settings = app?.ui?.settings;
-  const value = readBoolSetting(key, defaultValue);
-  state[key] = value;
-
-  if (!settings || typeof settings.addSetting !== "function") {
-    return;
-  }
-
-  settings.addSetting({
-    id,
-    name,
-    type: "boolean",
-    defaultValue: value,
-    onChange: (next) => {
-      state[key] = !!next;
-      writeBoolSetting(key, state[key]);
-      applyVisibility();
-    },
+function setupHotkey() {
+  window.addEventListener("keydown", (event) => {
+    if (event.key.toLowerCase() !== "n") return;
+    const tag = (document.activeElement?.tagName || "").toLowerCase();
+    const editable = document.activeElement?.isContentEditable;
+    if (tag === "input" || tag === "textarea" || editable) return;
+    state.visible = !state.visible;
+    writeBool("visible", state.visible);
+    applyVisibility(ensurePanel());
   });
 }
 
 function setupSettings() {
-  registerSetting(
-    "performstat.enabled",
-    "PerformStat: Enable Top Bar",
-    "enabled",
-    true
-  );
-  registerSetting(
-    "performstat.show_memory",
-    "PerformStat: Show Memory",
-    "showMemory",
-    true
-  );
-  registerSetting(
-    "performstat.show_gpu",
-    "PerformStat: Show GPU Usage",
-    "showGpu",
-    true
-  );
-  registerSetting(
-    "performstat.show_vram",
-    "PerformStat: Show VRAM Usage",
-    "showVram",
-    true
-  );
-  registerSetting(
-    "performstat.show_temp",
-    "PerformStat: Show GPU Temperature",
-    "showTemp",
-    true
-  );
+  const settings = app?.ui?.settings;
+  if (!settings || typeof settings.addSetting !== "function") return;
 
-  applyVisibility();
+  settings.addSetting({
+    id: "performstat.visible",
+    name: "PerformStat: Enable Floating Panel",
+    type: "boolean",
+    defaultValue: state.visible,
+    onChange: (next) => {
+      state.visible = !!next;
+      writeBool("visible", state.visible);
+      applyVisibility(ensurePanel());
+    },
+  });
+  settings.addSetting({
+    id: "performstat.show_memory",
+    name: "PerformStat: Show Memory",
+    type: "boolean",
+    defaultValue: state.showMemory,
+    onChange: (next) => {
+      state.showMemory = !!next;
+      writeBool("showMemory", state.showMemory);
+      applyVisibility(ensurePanel());
+    },
+  });
+  settings.addSetting({
+    id: "performstat.show_gpu",
+    name: "PerformStat: Show GPU",
+    type: "boolean",
+    defaultValue: state.showGpu,
+    onChange: (next) => {
+      state.showGpu = !!next;
+      writeBool("showGpu", state.showGpu);
+      applyVisibility(ensurePanel());
+    },
+  });
+  settings.addSetting({
+    id: "performstat.show_vram",
+    name: "PerformStat: Show VRAM",
+    type: "boolean",
+    defaultValue: state.showVram,
+    onChange: (next) => {
+      state.showVram = !!next;
+      writeBool("showVram", state.showVram);
+    },
+  });
+  settings.addSetting({
+    id: "performstat.show_temp",
+    name: "PerformStat: Show Temperature",
+    type: "boolean",
+    defaultValue: state.showTemp,
+    onChange: (next) => {
+      state.showTemp = !!next;
+      writeBool("showTemp", state.showTemp);
+    },
+  });
+}
+
+function setBar(el, percent) {
+  if (!el) return;
+  const value = Math.max(0, Math.min(100, percent || 0));
+  el.style.width = `${value}%`;
 }
 
 function formatBytes(num) {
-  const step = 1024;
-  let value = num;
   const units = ["B", "KB", "MB", "GB", "TB"];
-  let unit = units[0];
-  for (let i = 0; i < units.length; i += 1) {
-    unit = units[i];
-    if (value < step || i === units.length - 1) {
-      break;
-    }
-    value /= step;
+  let value = Number(num) || 0;
+  let i = 0;
+  while (value >= 1024 && i < units.length - 1) {
+    value /= 1024;
+    i += 1;
   }
-  return `${value.toFixed(1)}${unit}`;
-}
-
-function setBar(span, percent, colorVar) {
-  if (!span) return;
-  const pct = Math.max(0, Math.min(100, percent || 0));
-  span.style.width = `${pct}%`;
-  span.style.background = `var(${colorVar})`;
-}
-
-function formatPercent(value) {
-  if (typeof value !== "number" || Number.isNaN(value)) {
-    return "N/A";
-  }
-  return `${value.toFixed(1)}%`;
+  return `${value.toFixed(1)}${units[i]}`;
 }
 
 function renderStats(data) {
-  if (!state.enabled) {
-    return;
-  }
+  const panel = ensurePanel();
+  if (!state.visible) return;
 
-  const ramBar = document.querySelector(`[data-ps="ram-bar"]`);
-  const ramMeta = document.querySelector(`[data-ps="ram-meta"]`);
-  const gpuList = document.querySelector(`[data-ps="gpu-list"]`);
+  const memFill = panel.querySelector(`[data-ps="mem-fill"]`);
+  const memMeta = panel.querySelector(`[data-ps="mem-meta"]`);
+  const gpuList = panel.querySelector(`[data-ps="gpu-list"]`);
+  if (!gpuList || !memMeta) return;
 
   if (!data || !data.ok) {
-    if (ramMeta) ramMeta.textContent = "No data";
-    if (gpuList) gpuList.innerHTML = `<div class="ps-warn">No GPU data</div>`;
+    memMeta.textContent = "No data";
+    gpuList.innerHTML = `<div class="ps-warn">No GPU data</div>`;
     return;
   }
 
-  if (data.memory && data.memory.error) {
-    if (ramMeta) ramMeta.textContent = data.memory.error;
-    setBar(ramBar, 0, "--ps-ram");
+  if (data.memory?.error) {
+    setBar(memFill, 0);
+    memMeta.textContent = data.memory.error;
   } else if (data.memory) {
     const pct = data.memory.percent || 0;
-    setBar(ramBar, pct, "--ps-ram");
-    if (ramMeta) {
-      ramMeta.textContent = `${pct.toFixed(1)}% (${formatBytes(
-        data.memory.used
-      )}/${formatBytes(data.memory.total)})`;
-    }
+    setBar(memFill, pct);
+    memMeta.textContent = `${pct.toFixed(1)}% (${formatBytes(data.memory.used)}/${formatBytes(
+      data.memory.total
+    )})`;
   }
 
-  if (!gpuList) return;
   gpuList.innerHTML = "";
   if (!data.gpu) {
     gpuList.innerHTML = `<div class="ps-warn">No GPU data</div>`;
@@ -425,89 +367,87 @@ function renderStats(data) {
     gpuList.innerHTML = `<div class="ps-warn">${data.gpu.error}</div>`;
     return;
   }
-  if (!data.gpu.gpus || data.gpu.gpus.length === 0) {
+  if (!Array.isArray(data.gpu.gpus) || data.gpu.gpus.length === 0) {
     gpuList.innerHTML = `<div class="ps-warn">No GPU devices</div>`;
     return;
   }
 
   data.gpu.gpus.forEach((gpu) => {
-    const row = document.createElement("div");
-    row.className = "ps-gpu-row";
+    const item = document.createElement("div");
+    item.className = "ps-gpu";
 
-    const name = document.createElement("div");
-    name.className = "ps-gpu-name";
-    name.textContent = `[${gpu.index}] ${gpu.name}`;
+    const row1 = document.createElement("div");
+    row1.className = "ps-row";
+    row1.innerHTML = `
+      <div class="ps-name">[${gpu.index}] ${gpu.name}</div>
+      <div class="ps-meta">${gpu.status ? gpu.status : ""}</div>
+    `;
 
-    const bars = document.createElement("div");
-    bars.className = "ps-bars";
+    const row2 = document.createElement("div");
+    row2.className = "ps-row";
 
-    const gpuBar = document.createElement("div");
-    gpuBar.className = "ps-bar";
-    const gpuFill = document.createElement("span");
-    gpuBar.appendChild(gpuFill);
+    const gpuBarWrap = document.createElement("div");
+    gpuBarWrap.className = "ps-bar";
+    gpuBarWrap.style.flex = "1";
+    const gpuFill = document.createElement("div");
+    gpuFill.className = "ps-fill ps-fill-gpu";
+    gpuBarWrap.appendChild(gpuFill);
 
-    const vramBar = document.createElement("div");
-    vramBar.className = "ps-bar ps-vram-wrap";
-    const vramFill = document.createElement("span");
-    vramBar.appendChild(vramFill);
+    const vramBarWrap = document.createElement("div");
+    vramBarWrap.className = "ps-bar";
+    vramBarWrap.style.flex = "1";
+    const vramFill = document.createElement("div");
+    vramFill.className = "ps-fill ps-fill-vram";
+    vramBarWrap.appendChild(vramFill);
 
-    bars.appendChild(gpuBar);
-    bars.appendChild(vramBar);
+    if (!state.showGpu) gpuBarWrap.style.display = "none";
+    if (!state.showVram) vramBarWrap.style.display = "none";
+    row2.appendChild(gpuBarWrap);
+    row2.appendChild(vramBarWrap);
 
-    const meta = document.createElement("div");
-    meta.className = "ps-meta";
+    const row3 = document.createElement("div");
+    row3.className = "ps-meta";
+    const parts = [];
 
     if (data.gpu.provider === "nvidia_nvml") {
-      const vramPct = (gpu.vram_used / gpu.vram_total) * 100;
-      setBar(gpuFill, gpu.util_gpu, "--ps-gpu");
-      setBar(vramFill, vramPct, "--ps-vram");
-      if (!state.showGpu) {
-        gpuBar.style.display = "none";
-      }
-      if (!state.showVram) {
-        vramBar.style.display = "none";
-      }
-      const parts = [];
-      if (state.showGpu) parts.push(`GPU ${gpu.util_gpu}%`);
+      const gpuPct = Number(gpu.util_gpu) || 0;
+      const vramPct =
+        gpu.vram_total > 0 ? (Number(gpu.vram_used) / Number(gpu.vram_total)) * 100 : 0;
+      setBar(gpuFill, gpuPct);
+      setBar(vramFill, vramPct);
+      if (state.showGpu) parts.push(`GPU ${gpuPct.toFixed(0)}%`);
       if (state.showVram) parts.push(`VRAM ${vramPct.toFixed(1)}%`);
       if (state.showTemp) parts.push(`${gpu.temp}C`);
-      meta.textContent = parts.join(" · ");
     } else if (data.gpu.provider === "apple_mps") {
+      const gpuPct = Number(gpu.util_gpu);
+      const memPct = Number(gpu.util_mem) || 0;
       const vramPct =
-        gpu.vram_total > 0 ? (gpu.vram_used / gpu.vram_total) * 100 : 0;
-      const gpuPct =
-        typeof gpu.util_gpu === "number" ? gpu.util_gpu : gpu.util_mem || 0;
-      setBar(gpuFill, gpuPct, "--ps-gpu");
-      setBar(vramFill, vramPct, "--ps-vram");
-      if (!state.showGpu) {
-        gpuBar.style.display = "none";
+        gpu.vram_total > 0 ? (Number(gpu.vram_used) / Number(gpu.vram_total)) * 100 : memPct;
+      setBar(gpuFill, Number.isFinite(gpuPct) ? gpuPct : memPct);
+      setBar(vramFill, vramPct);
+      if (state.showGpu) {
+        parts.push(`GPU ${Number.isFinite(gpuPct) ? gpuPct.toFixed(1) : "N/A"}%`);
       }
-      if (!state.showVram) {
-        vramBar.style.display = "none";
-      }
-      const parts = [];
-      const statusLabel = gpu.status ? `status ${gpu.status}` : null;
-      if (statusLabel) {
-        parts.push(statusLabel);
-      }
-      if (state.showGpu) parts.push(`GPU ${formatPercent(gpu.util_gpu)}`);
       if (state.showVram) parts.push(`VRAM ${vramPct.toFixed(1)}%`);
       if (state.showTemp) {
-        parts.push(gpu.temp == null ? "temp --" : `${gpu.temp.toFixed(1)}C`);
+        parts.push(typeof gpu.temp === "number" ? `${gpu.temp.toFixed(1)}C` : "temp --");
       }
-      meta.textContent = parts.join(" · ");
     } else {
-      setBar(gpuFill, 0, "--ps-gpu");
-      setBar(vramFill, 0, "--ps-vram");
-      meta.textContent = `alloc ${formatBytes(gpu.allocated)} · reserv ${formatBytes(
-        gpu.reserved
-      )}`;
+      const alloc = Number(gpu.allocated) || 0;
+      const reserv = Number(gpu.reserved) || 0;
+      const vramPct = reserv > 0 ? (alloc / reserv) * 100 : 0;
+      setBar(gpuFill, 0);
+      setBar(vramFill, vramPct);
+      if (state.showVram) parts.push(`VRAM ${vramPct.toFixed(1)}%`);
+      parts.push(`alloc ${formatBytes(alloc)}`);
     }
 
-    row.appendChild(name);
-    row.appendChild(bars);
-    row.appendChild(meta);
-    gpuList.appendChild(row);
+    row3.textContent = parts.join(" · ");
+
+    item.appendChild(row1);
+    item.appendChild(row2);
+    item.appendChild(row3);
+    gpuList.appendChild(item);
   });
 }
 
@@ -518,31 +458,20 @@ async function fetchStats() {
       renderStats({ ok: false });
       return;
     }
-    const data = await resp.json();
-    renderStats(data);
-  } catch (err) {
+    renderStats(await resp.json());
+  } catch (error) {
     renderStats({ ok: false });
   }
 }
 
 app.registerExtension({
-  name: "performstat.topbar",
+  name: "performstat.panel",
   async setup() {
     ensureStyle();
     setupSettings();
-    ensureBar();
-    window.addEventListener("resize", () => {
-      applyLayoutMode(ensureBar());
-      applyVisibility();
-    });
-    setTimeout(() => {
-      const bar = ensureBar();
-      if (bar.dataset.psMounted === "fixed") {
-        mountBar(bar);
-        applyLayoutMode(bar);
-        applyVisibility();
-      }
-    }, 1500);
+    setupHotkey();
+    ensurePanel();
+    window.addEventListener("resize", () => applyPosition(ensurePanel()));
     await fetchStats();
     setInterval(fetchStats, REFRESH_MS);
   },
