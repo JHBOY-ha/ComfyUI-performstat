@@ -31,6 +31,12 @@ def _safe_call(func, default=None):
         return default
 
 
+def _normalize_text(value):
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="ignore")
+    return str(value)
+
+
 def _apple_ioreg_stats():
     try:
         output = _subprocess.check_output(
@@ -141,7 +147,7 @@ def _gpu_stats_struct():
                 gpus.append(
                     {
                         "index": idx,
-                        "name": name.decode("utf-8", errors="ignore"),
+                        "name": _normalize_text(name),
                         "util_gpu": util.gpu,
                         "util_mem": util.memory,
                         "vram_used": mem.used,
