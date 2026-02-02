@@ -13,17 +13,17 @@ function ensureStyle() {
   style.id = STYLE_ID;
   style.textContent = `
 :root {
-  --ps-bg: linear-gradient(135deg, rgba(18, 22, 34, 0.98), rgba(9, 12, 20, 0.98));
-  --ps-border: rgba(255, 255, 255, 0.12);
-  --ps-text: #e6eef7;
-  --ps-muted: #a8b2bf;
-  --ps-accent: #3bd6c6;
-  --ps-warn: #ffb44d;
-  --ps-pad: 10px;
+  --ps-bg: rgba(10, 12, 18, 0.92);
+  --ps-border: rgba(255, 255, 255, 0.08);
+  --ps-text: #e8eef5;
+  --ps-muted: #9aa6b2;
+  --ps-ram: #5ad6a1;
+  --ps-gpu: #5aa4f6;
+  --ps-vram: #f6c45a;
 }
 
 body.ps-has-performstat {
-  padding-top: 56px;
+  padding-top: 46px;
 }
 
 #${BAR_ID} {
@@ -32,77 +32,86 @@ body.ps-has-performstat {
   left: 0;
   right: 0;
   z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 8px 14px;
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 12px;
+  padding: 8px 14px 9px;
   background: var(--ps-bg);
   color: var(--ps-text);
   border-bottom: 1px solid var(--ps-border);
   font-family: "Fira Code", "JetBrains Mono", "Menlo", monospace;
   font-size: 12px;
-  letter-spacing: 0.2px;
+  letter-spacing: 0.1px;
   backdrop-filter: blur(6px);
 }
 
-#${BAR_ID} .ps-left {
+#${BAR_ID} .ps-item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  min-width: 220px;
-}
-
-#${BAR_ID} .ps-title {
-  font-weight: 600;
-  color: var(--ps-accent);
-  text-transform: uppercase;
-  font-size: 11px;
-}
-
-#${BAR_ID} .ps-right {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 16px;
-  flex: 1;
-}
-
-#${BAR_ID} .ps-block {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 #${BAR_ID} .ps-label {
   font-size: 10px;
   text-transform: uppercase;
   color: var(--ps-muted);
+  letter-spacing: 0.8px;
 }
 
-#${BAR_ID} .ps-value {
+#${BAR_ID} .ps-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+#${BAR_ID} .ps-bar span {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+#${BAR_ID} .ps-meta {
+  color: var(--ps-muted);
+  font-size: 11px;
+}
+
+#${BAR_ID} .ps-gpu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#${BAR_ID} .ps-gpu-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
+#${BAR_ID} .ps-gpu-name {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-#${BAR_ID} .ps-gpus {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+#${BAR_ID} .ps-bars {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
 }
 
 #${BAR_ID} .ps-warn {
-  color: var(--ps-warn);
+  color: #f6c45a;
 }
 
 @media (max-width: 860px) {
   #${BAR_ID} {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  #${BAR_ID} .ps-right {
     grid-template-columns: 1fr;
-    width: 100%;
+  }
+  #${BAR_ID} .ps-bars {
+    grid-template-columns: 1fr;
   }
 }
 `;
@@ -118,21 +127,14 @@ function ensureBar() {
   bar = document.createElement("div");
   bar.id = BAR_ID;
   bar.innerHTML = `
-    <div class="ps-left">
-      <div class="ps-title">Performance</div>
-      <div class="ps-value" data-ps="host">Loading...</div>
-      <div class="ps-value" data-ps="time"></div>
+    <div class="ps-item">
+      <div class="ps-label">Memory</div>
+      <div class="ps-bar"><span data-ps="ram-bar"></span></div>
+      <div class="ps-meta" data-ps="ram-meta">Loading...</div>
     </div>
-    <div class="ps-right">
-      <div class="ps-block">
-        <div class="ps-label">CPU</div>
-        <div class="ps-value" data-ps="cpu"></div>
-        <div class="ps-value" data-ps="ram"></div>
-      </div>
-      <div class="ps-block">
-        <div class="ps-label">GPU</div>
-        <div class="ps-gpus" data-ps="gpu"></div>
-      </div>
+    <div class="ps-item">
+      <div class="ps-label">GPU</div>
+      <div class="ps-gpu-list" data-ps="gpu-list"></div>
     </div>
   `;
   document.body.appendChild(bar);
@@ -154,74 +156,98 @@ function formatBytes(num) {
   return `${value.toFixed(1)}${unit}`;
 }
 
-function summarizeCores(perCore) {
-  if (!Array.isArray(perCore) || perCore.length === 0) {
-    return "";
-  }
-  const limit = 12;
-  const slice = perCore.slice(0, limit).map((v) => `${v.toFixed(0)}%`);
-  const suffix = perCore.length > limit ? " ..." : "";
-  return `Cores: ${slice.join(" ")}${suffix}`;
+function setBar(span, percent, colorVar) {
+  if (!span) return;
+  const pct = Math.max(0, Math.min(100, percent || 0));
+  span.style.width = `${pct}%`;
+  span.style.background = `var(${colorVar})`;
 }
 
 function renderStats(data) {
-  const hostEl = document.querySelector(`[data-ps="host"]`);
-  const timeEl = document.querySelector(`[data-ps="time"]`);
-  const cpuEl = document.querySelector(`[data-ps="cpu"]`);
-  const ramEl = document.querySelector(`[data-ps="ram"]`);
-  const gpuEl = document.querySelector(`[data-ps="gpu"]`);
+  const ramBar = document.querySelector(`[data-ps="ram-bar"]`);
+  const ramMeta = document.querySelector(`[data-ps="ram-meta"]`);
+  const gpuList = document.querySelector(`[data-ps="gpu-list"]`);
 
   if (!data || !data.ok) {
-    hostEl.textContent = "Performance stats unavailable";
-    cpuEl.textContent = "";
-    ramEl.textContent = "";
-    gpuEl.innerHTML = `<div class="ps-warn">No data</div>`;
+    if (ramMeta) ramMeta.textContent = "No data";
+    if (gpuList) gpuList.innerHTML = `<div class="ps-warn">No GPU data</div>`;
     return;
   }
 
-  hostEl.textContent = `${data.host} (${data.platform})`;
-  timeEl.textContent = data.timestamp;
-
-  if (data.cpu && data.cpu.error) {
-    cpuEl.innerHTML = `<span class="ps-warn">${data.cpu.error}</span>`;
-    ramEl.textContent = "";
-  } else if (data.cpu) {
-    cpuEl.textContent = `Total ${data.cpu.total.toFixed(1)}% · ${summarizeCores(
-      data.cpu.per_core
-    )}`;
-    ramEl.textContent = `RAM ${data.cpu.memory.percent.toFixed(1)}% (${formatBytes(
-      data.cpu.memory.used
-    )}/${formatBytes(data.cpu.memory.total)})`;
+  if (data.memory && data.memory.error) {
+    if (ramMeta) ramMeta.textContent = data.memory.error;
+    setBar(ramBar, 0, "--ps-ram");
+  } else if (data.memory) {
+    const pct = data.memory.percent || 0;
+    setBar(ramBar, pct, "--ps-ram");
+    if (ramMeta) {
+      ramMeta.textContent = `${pct.toFixed(1)}% (${formatBytes(
+        data.memory.used
+      )}/${formatBytes(data.memory.total)})`;
+    }
   }
 
-  gpuEl.innerHTML = "";
+  if (!gpuList) return;
+  gpuList.innerHTML = "";
   if (!data.gpu) {
-    gpuEl.innerHTML = `<div class="ps-warn">No GPU data</div>`;
+    gpuList.innerHTML = `<div class="ps-warn">No GPU data</div>`;
     return;
   }
   if (data.gpu.error) {
-    gpuEl.innerHTML = `<div class="ps-warn">${data.gpu.error}</div>`;
+    gpuList.innerHTML = `<div class="ps-warn">${data.gpu.error}</div>`;
     return;
   }
   if (!data.gpu.gpus || data.gpu.gpus.length === 0) {
-    gpuEl.innerHTML = `<div class="ps-warn">No GPU devices</div>`;
+    gpuList.innerHTML = `<div class="ps-warn">No GPU devices</div>`;
     return;
   }
+
   data.gpu.gpus.forEach((gpu) => {
-    const line = document.createElement("div");
+    const row = document.createElement("div");
+    row.className = "ps-gpu-row";
+
+    const name = document.createElement("div");
+    name.className = "ps-gpu-name";
+    name.textContent = `[${gpu.index}] ${gpu.name}`;
+
+    const bars = document.createElement("div");
+    bars.className = "ps-bars";
+
+    const gpuBar = document.createElement("div");
+    gpuBar.className = "ps-bar";
+    const gpuFill = document.createElement("span");
+    gpuBar.appendChild(gpuFill);
+
+    const vramBar = document.createElement("div");
+    vramBar.className = "ps-bar";
+    const vramFill = document.createElement("span");
+    vramBar.appendChild(vramFill);
+
+    bars.appendChild(gpuBar);
+    bars.appendChild(vramBar);
+
+    const meta = document.createElement("div");
+    meta.className = "ps-meta";
+
     if (data.gpu.provider === "nvidia_nvml") {
       const vramPct = (gpu.vram_used / gpu.vram_total) * 100;
-      line.textContent = `[${gpu.index}] ${gpu.name} · ${gpu.util_gpu}% GPU · ${gpu.util_mem}% MEM · VRAM ${vramPct.toFixed(
+      setBar(gpuFill, gpu.util_gpu, "--ps-gpu");
+      setBar(vramFill, vramPct, "--ps-vram");
+      meta.textContent = `GPU ${gpu.util_gpu}% · VRAM ${vramPct.toFixed(
         1
-      )}% (${formatBytes(gpu.vram_used)}/${formatBytes(gpu.vram_total)}) · ${
-        gpu.temp
-      }C`;
+      )}% · ${gpu.temp}C`;
     } else {
-      line.textContent = `[${gpu.index}] ${gpu.name} · alloc ${formatBytes(
-        gpu.allocated
-      )} · reserv ${formatBytes(gpu.reserved)}`;
+      setBar(gpuFill, 0, "--ps-gpu");
+      setBar(vramFill, 0, "--ps-vram");
+      meta.textContent = `alloc ${formatBytes(gpu.allocated)} · reserv ${formatBytes(
+        gpu.reserved
+      )}`;
     }
-    gpuEl.appendChild(line);
+
+    row.appendChild(name);
+    row.appendChild(bars);
+    row.appendChild(meta);
+    gpuList.appendChild(row);
   });
 }
 

@@ -50,6 +50,19 @@ def _cpu_stats_struct(sample_interval_ms):
     }
 
 
+def _memory_stats_struct():
+    psutil, err = _safe_import("psutil")
+    if psutil is None:
+        return {"error": f"psutil not available ({err})"}
+
+    mem = psutil.virtual_memory()
+    return {
+        "percent": mem.percent,
+        "used": mem.used,
+        "total": mem.total,
+    }
+
+
 def _cpu_stats(sample_interval_ms):
     data = _cpu_stats_struct(sample_interval_ms)
     if "error" in data:
@@ -171,13 +184,9 @@ def _gpu_stats():
 
 
 def _build_stats_struct(sample_interval_ms):
-    timestamp = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return {
         "ok": True,
-        "timestamp": timestamp,
-        "host": _platform.node(),
-        "platform": f"{_platform.system()} {_platform.release()}",
-        "cpu": _cpu_stats_struct(sample_interval_ms),
+        "memory": _memory_stats_struct(),
         "gpu": _gpu_stats_struct(),
     }
 
