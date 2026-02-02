@@ -143,7 +143,7 @@ function ensureStyle() {
 #${PANEL_ID} .ps-gpu-list {
   display: grid;
   gap: 4px;
-  max-height: 40vh;
+  max-height: 60vh;
   overflow: auto;
   padding-right: 4px;
 }
