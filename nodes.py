@@ -1,5 +1,7 @@
 import datetime as _dt
 import platform as _platform
+import re as _re
+import subprocess as _subprocess
 
 from aiohttp import web
 from server import PromptServer
@@ -20,6 +22,35 @@ def _format_bytes(num):
             return f"{num:.1f}{unit}"
         num /= step
     return f"{num:.1f}PB"
+
+
+def _safe_call(func, default=None):
+    try:
+        return func()
+    except Exception:
+        return default
+
+
+def _apple_ioreg_stats():
+    try:
+        output = _subprocess.check_output(
+            ["ioreg", "-r", "-d", "1", "-w", "0", "-c", "IOAccelerator"],
+            stderr=_subprocess.DEVNULL,
+            text=True,
+            timeout=0.6,
+        )
+    except Exception:
+        return {}
+
+    util_match = _re.search(r'"Device Utilization %" = (\d+)', output)
+    temp_match = _re.search(r'"Temperature(?:\\(C\\))?" = (\d+)', output)
+
+    data = {}
+    if util_match:
+        data["util_gpu"] = float(util_match.group(1))
+    if temp_match:
+        data["temp"] = float(temp_match.group(1))
+    return data
 
 
 def _cpu_stats_struct(sample_interval_ms):
@@ -132,6 +163,39 @@ def _gpu_stats_struct():
         }
 
     if not torch.cuda.is_available():
+        if (
+            _platform.system() == "Darwin"
+            and hasattr(torch, "backends")
+            and hasattr(torch.backends, "mps")
+            and torch.backends.mps.is_available()
+        ):
+            allocated = _safe_call(
+                lambda: int(getattr(torch.mps, "current_allocated_memory")()), 0
+            )
+            driver_alloc = _safe_call(
+                lambda: int(getattr(torch.mps, "driver_allocated_memory")()), allocated
+            )
+            rec_max = _safe_call(
+                lambda: int(getattr(torch.mps, "recommended_max_memory")()), 0
+            )
+            mem_total = _memory_stats_struct().get("total", 0)
+            vram_total = rec_max if rec_max > 0 else mem_total
+            vram_used = driver_alloc if driver_alloc > 0 else allocated
+            vram_pct = (vram_used / vram_total * 100.0) if vram_total > 0 else 0.0
+
+            extra = _apple_ioreg_stats()
+            gpu = {
+                "index": 0,
+                "name": "Apple M-Series GPU (MPS)",
+                "util_gpu": extra.get("util_gpu"),
+                "util_mem": vram_pct,
+                "vram_used": vram_used,
+                "vram_total": vram_total,
+                "temp": extra.get("temp"),
+                "allocated": allocated,
+            }
+            return {"provider": "apple_mps", "gpus": [gpu]}
+
         return {"provider": "torch", "gpus": []}
 
     gpus = []
@@ -167,6 +231,34 @@ def _gpu_stats():
                 f"({_format_bytes(gpu['vram_used'])}/"
                 f"{_format_bytes(gpu['vram_total'])}), "
                 f"{gpu['temp']}C"
+            )
+        return "\n".join(lines)
+
+    if data["provider"] == "apple_mps":
+        if not data["gpus"]:
+            return "GPU: no Apple MPS device"
+        lines = ["GPU (Apple MPS):"]
+        for gpu in data["gpus"]:
+            vram_pct = (
+                gpu["vram_used"] / gpu["vram_total"] * 100.0
+                if gpu["vram_total"] > 0
+                else 0.0
+            )
+            gpu_util = (
+                f"{gpu['util_gpu']:.1f}%"
+                if isinstance(gpu.get("util_gpu"), (int, float))
+                else "N/A"
+            )
+            temp = (
+                f"{gpu['temp']:.0f}C"
+                if isinstance(gpu.get("temp"), (int, float))
+                else "N/A"
+            )
+            lines.append(
+                f"  [{gpu['index']}] {gpu['name']}: "
+                f"{gpu_util} GPU, VRAM {vram_pct:.1f}% "
+                f"({_format_bytes(gpu['vram_used'])}/"
+                f"{_format_bytes(gpu['vram_total'])}), {temp}"
             )
         return "\n".join(lines)
 

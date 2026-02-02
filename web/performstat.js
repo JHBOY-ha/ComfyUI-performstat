@@ -4,6 +4,15 @@ import { api } from "../../scripts/api.js";
 const BAR_ID = "performstat-bar";
 const STYLE_ID = "performstat-style";
 const REFRESH_MS = 1000;
+const STORE_PREFIX = "performstat.";
+
+const state = {
+  enabled: true,
+  showMemory: true,
+  showGpu: true,
+  showVram: true,
+  showTemp: true,
+};
 
 function ensureStyle() {
   if (document.getElementById(STYLE_ID)) {
@@ -23,12 +32,15 @@ function ensureStyle() {
 }
 
 body.ps-has-performstat {
-  padding-top: 46px;
+  --ps-top-offset: 52px;
+}
+
+body.ps-has-performstat.ps-fixed-mode {
+  padding-top: calc(var(--ps-top-offset) + 46px);
 }
 
 #${BAR_ID} {
-  position: fixed;
-  top: 0;
+  position: relative;
   left: 0;
   right: 0;
   z-index: 9999;
@@ -43,6 +55,11 @@ body.ps-has-performstat {
   font-size: 12px;
   letter-spacing: 0.1px;
   backdrop-filter: blur(6px);
+}
+
+#${BAR_ID}.ps-fixed {
+  position: fixed;
+  top: var(--ps-top-offset);
 }
 
 #${BAR_ID} .ps-item {
@@ -106,6 +123,26 @@ body.ps-has-performstat {
   color: #f6c45a;
 }
 
+#${BAR_ID}.ps-hidden {
+  display: none;
+}
+
+#${BAR_ID}.ps-no-memory .ps-memory {
+  display: none;
+}
+
+#${BAR_ID}.ps-no-gpu .ps-gpu {
+  display: none;
+}
+
+#${BAR_ID}.ps-no-vram .ps-vram-wrap {
+  display: none;
+}
+
+#${BAR_ID}.ps-no-temp .ps-temp {
+  display: none;
+}
+
 @media (max-width: 860px) {
   #${BAR_ID} {
     grid-template-columns: 1fr;
@@ -127,18 +164,147 @@ function ensureBar() {
   bar = document.createElement("div");
   bar.id = BAR_ID;
   bar.innerHTML = `
-    <div class="ps-item">
+    <div class="ps-item ps-memory">
       <div class="ps-label">Memory</div>
       <div class="ps-bar"><span data-ps="ram-bar"></span></div>
       <div class="ps-meta" data-ps="ram-meta">Loading...</div>
     </div>
-    <div class="ps-item">
+    <div class="ps-item ps-gpu">
       <div class="ps-label">GPU</div>
       <div class="ps-gpu-list" data-ps="gpu-list"></div>
     </div>
   `;
-  document.body.appendChild(bar);
+  mountBar(bar);
+  applyLayoutMode(bar);
+  applyVisibility();
   return bar;
+}
+
+function mountBar(bar) {
+  const anchor = document.querySelector(
+    ".comfyui-menu, #comfyui-menu, .comfy-menu, .top-panel, header"
+  );
+  if (anchor && anchor.parentElement) {
+    anchor.insertAdjacentElement("afterend", bar);
+    bar.dataset.psMounted = "embedded";
+  } else {
+    document.body.appendChild(bar);
+    bar.dataset.psMounted = "fixed";
+  }
+}
+
+function getTopOffset() {
+  const candidates = document.querySelectorAll(
+    ".comfyui-menu, #comfyui-menu, .comfy-menu, .top-panel, header"
+  );
+  let maxBottom = 0;
+  candidates.forEach((el) => {
+    const rect = el.getBoundingClientRect();
+    if (rect.bottom > maxBottom) {
+      maxBottom = rect.bottom;
+    }
+  });
+  return Math.max(0, Math.ceil(maxBottom + 4));
+}
+
+function applyLayoutMode(bar) {
+  if (!bar) return;
+  document.body.classList.remove("ps-fixed-mode");
+  bar.classList.remove("ps-fixed");
+
+  if (bar.dataset.psMounted !== "fixed") {
+    return;
+  }
+
+  const topOffset = getTopOffset();
+  document.body.style.setProperty("--ps-top-offset", `${topOffset}px`);
+  bar.classList.add("ps-fixed");
+  document.body.classList.add("ps-fixed-mode");
+}
+
+function readBoolSetting(key, defaultValue) {
+  const raw = localStorage.getItem(STORE_PREFIX + key);
+  if (raw == null) return defaultValue;
+  return raw === "true";
+}
+
+function writeBoolSetting(key, value) {
+  localStorage.setItem(STORE_PREFIX + key, value ? "true" : "false");
+}
+
+function applyVisibility() {
+  const bar = document.getElementById(BAR_ID);
+  if (!bar) return;
+
+  bar.classList.toggle("ps-hidden", !state.enabled);
+  bar.classList.toggle("ps-no-memory", !state.showMemory);
+  const hideGpuBlock = !state.showGpu && !state.showVram && !state.showTemp;
+  bar.classList.toggle("ps-no-gpu", hideGpuBlock);
+  bar.classList.toggle("ps-no-vram", !state.showVram);
+  bar.classList.toggle("ps-no-temp", !state.showTemp);
+  if (bar.dataset.psMounted === "fixed") {
+    document.body.classList.toggle(
+      "ps-fixed-mode",
+      state.enabled && bar.classList.contains("ps-fixed")
+    );
+  }
+}
+
+function registerSetting(id, name, key, defaultValue) {
+  const settings = app?.ui?.settings;
+  const value = readBoolSetting(key, defaultValue);
+  state[key] = value;
+
+  if (!settings || typeof settings.addSetting !== "function") {
+    return;
+  }
+
+  settings.addSetting({
+    id,
+    name,
+    type: "boolean",
+    defaultValue: value,
+    onChange: (next) => {
+      state[key] = !!next;
+      writeBoolSetting(key, state[key]);
+      applyVisibility();
+    },
+  });
+}
+
+function setupSettings() {
+  registerSetting(
+    "performstat.enabled",
+    "PerformStat: Enable Top Bar",
+    "enabled",
+    true
+  );
+  registerSetting(
+    "performstat.show_memory",
+    "PerformStat: Show Memory",
+    "showMemory",
+    true
+  );
+  registerSetting(
+    "performstat.show_gpu",
+    "PerformStat: Show GPU Usage",
+    "showGpu",
+    true
+  );
+  registerSetting(
+    "performstat.show_vram",
+    "PerformStat: Show VRAM Usage",
+    "showVram",
+    true
+  );
+  registerSetting(
+    "performstat.show_temp",
+    "PerformStat: Show GPU Temperature",
+    "showTemp",
+    true
+  );
+
+  applyVisibility();
 }
 
 function formatBytes(num) {
@@ -163,7 +329,18 @@ function setBar(span, percent, colorVar) {
   span.style.background = `var(${colorVar})`;
 }
 
+function formatPercent(value) {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return "N/A";
+  }
+  return `${value.toFixed(1)}%`;
+}
+
 function renderStats(data) {
+  if (!state.enabled) {
+    return;
+  }
+
   const ramBar = document.querySelector(`[data-ps="ram-bar"]`);
   const ramMeta = document.querySelector(`[data-ps="ram-meta"]`);
   const gpuList = document.querySelector(`[data-ps="gpu-list"]`);
@@ -219,7 +396,7 @@ function renderStats(data) {
     gpuBar.appendChild(gpuFill);
 
     const vramBar = document.createElement("div");
-    vramBar.className = "ps-bar";
+    vramBar.className = "ps-bar ps-vram-wrap";
     const vramFill = document.createElement("span");
     vramBar.appendChild(vramFill);
 
@@ -233,9 +410,37 @@ function renderStats(data) {
       const vramPct = (gpu.vram_used / gpu.vram_total) * 100;
       setBar(gpuFill, gpu.util_gpu, "--ps-gpu");
       setBar(vramFill, vramPct, "--ps-vram");
-      meta.textContent = `GPU ${gpu.util_gpu}% · VRAM ${vramPct.toFixed(
-        1
-      )}% · ${gpu.temp}C`;
+      if (!state.showGpu) {
+        gpuBar.style.display = "none";
+      }
+      if (!state.showVram) {
+        vramBar.style.display = "none";
+      }
+      const parts = [];
+      if (state.showGpu) parts.push(`GPU ${gpu.util_gpu}%`);
+      if (state.showVram) parts.push(`VRAM ${vramPct.toFixed(1)}%`);
+      if (state.showTemp) parts.push(`${gpu.temp}C`);
+      meta.textContent = parts.join(" · ");
+    } else if (data.gpu.provider === "apple_mps") {
+      const vramPct =
+        gpu.vram_total > 0 ? (gpu.vram_used / gpu.vram_total) * 100 : 0;
+      const gpuPct =
+        typeof gpu.util_gpu === "number" ? gpu.util_gpu : gpu.util_mem || 0;
+      setBar(gpuFill, gpuPct, "--ps-gpu");
+      setBar(vramFill, vramPct, "--ps-vram");
+      if (!state.showGpu) {
+        gpuBar.style.display = "none";
+      }
+      if (!state.showVram) {
+        vramBar.style.display = "none";
+      }
+      const parts = [];
+      if (state.showGpu) parts.push(`GPU ${formatPercent(gpu.util_gpu)}`);
+      if (state.showVram) parts.push(`VRAM ${vramPct.toFixed(1)}%`);
+      if (state.showTemp) {
+        parts.push(gpu.temp == null ? "temp N/A" : `${gpu.temp}C`);
+      }
+      meta.textContent = parts.join(" · ");
     } else {
       setBar(gpuFill, 0, "--ps-gpu");
       setBar(vramFill, 0, "--ps-vram");
@@ -269,7 +474,12 @@ app.registerExtension({
   name: "performstat.topbar",
   async setup() {
     ensureStyle();
+    setupSettings();
     ensureBar();
+    window.addEventListener("resize", () => {
+      applyLayoutMode(ensureBar());
+      applyVisibility();
+    });
     await fetchStats();
     setInterval(fetchStats, REFRESH_MS);
   },
