@@ -34,6 +34,7 @@ You can toggle bar visibility and metric items in ComfyUI settings:
 - PerformStat: Show GPU Usage
 - PerformStat: Show VRAM Usage
 - PerformStat: Show GPU Temperature
+- PerformStat: Show GPU [index] <name> (auto-generated after startup scan)
 
 ## Notes
 

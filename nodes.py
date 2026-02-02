@@ -3,8 +3,8 @@ import platform as _platform
 import re as _re
 import subprocess as _subprocess
 
-from aiohttp import web
-from server import PromptServer
+from aiohttp import web # type: ignore
+from server import PromptServer # type: ignore
 
 
 def _safe_import(name):

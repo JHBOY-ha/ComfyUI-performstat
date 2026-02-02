@@ -12,7 +12,9 @@ const state = {
   showGpu: readBool("showGpu", true),
   showVram: readBool("showVram", true),
   showTemp: readBool("showTemp", true),
+  gpuVisible: {},
 };
+const gpuSettingIds = new Set();
 
 function readBool(key, fallback) {
   const value = localStorage.getItem(STORE_PREFIX + key);
@@ -48,6 +50,22 @@ function readSize() {
 function writeSize(width, height) {
   localStorage.setItem(STORE_PREFIX + "width", String(width));
   localStorage.setItem(STORE_PREFIX + "height", String(height));
+}
+
+function gpuVisibleKey(index) {
+  return `gpuVisible.${index}`;
+}
+
+function isGpuVisible(index) {
+  if (!(index in state.gpuVisible)) {
+    state.gpuVisible[index] = readBool(gpuVisibleKey(index), true);
+  }
+  return state.gpuVisible[index];
+}
+
+function setGpuVisible(index, visible) {
+  state.gpuVisible[index] = !!visible;
+  writeBool(gpuVisibleKey(index), state.gpuVisible[index]);
 }
 
 function ensureStyle() {
@@ -367,6 +385,30 @@ function setupSettings() {
   });
 }
 
+function syncGpuSettings(gpuData) {
+  const settings = app?.ui?.settings;
+  if (!settings || typeof settings.addSetting !== "function") return;
+  if (!gpuData || !Array.isArray(gpuData.gpus)) return;
+
+  gpuData.gpus.forEach((gpu) => {
+    const idx = gpu.index;
+    const id = `performstat.gpu_visible_${idx}`;
+    if (gpuSettingIds.has(id)) return;
+    gpuSettingIds.add(id);
+    const defaultValue = readBool(gpuVisibleKey(idx), true);
+    state.gpuVisible[idx] = defaultValue;
+    settings.addSetting({
+      id,
+      name: `PerformStat: Show GPU [${idx}] ${gpu.name}`,
+      type: "boolean",
+      defaultValue,
+      onChange: (next) => {
+        setGpuVisible(idx, !!next);
+      },
+    });
+  });
+}
+
 function setBar(el, percent) {
   if (!el) return;
   const value = Math.max(0, Math.min(100, percent || 0));
@@ -424,7 +466,11 @@ function renderStats(data) {
     return;
   }
 
+  let visibleGpuCount = 0;
   data.gpu.gpus.forEach((gpu) => {
+    if (!isGpuVisible(gpu.index)) return;
+    visibleGpuCount += 1;
+
     const item = document.createElement("div");
     item.className = "ps-gpu";
 
@@ -501,6 +547,9 @@ function renderStats(data) {
     item.appendChild(row3);
     gpuList.appendChild(item);
   });
+  if (visibleGpuCount === 0) {
+    gpuList.innerHTML = `<div class="ps-warn">All GPUs are hidden in settings</div>`;
+  }
 }
 
 async function fetchStats() {
@@ -510,7 +559,9 @@ async function fetchStats() {
       renderStats({ ok: false });
       return;
     }
-    renderStats(await resp.json());
+    const data = await resp.json();
+    syncGpuSettings(data.gpu);
+    renderStats(data);
   } catch (error) {
     renderStats({ ok: false });
   }
