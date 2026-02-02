@@ -1,6 +1,6 @@
 # ComfyUI-performstat
 
-一个用于 ComfyUI 的轻量监控插件，可显示 CPU、内存和 GPU 使用情况。
+一个用于 ComfyUI 的轻量监控插件，可显示内存、GPU 使用情况。
 
   <img src="pic/example.png" width="250">  
   
@@ -15,18 +15,16 @@ cd ComfyUI-performstat
 pip install -r requirements.txt
 ```
 
-然后重启 ComfyUI。
+然后重启 ComfyUI  
 
-### 方式二：通过 ComfyUI Manager（GitHub URL）安装
+### 方式二：通过 ComfyUI Manager 安装
 
-1. 打开 **ComfyUI Manager**。  
-2. 选择 **Install via Git URL**。  
+1. 打开 **ComfyUI Manager**  
+2. 选择 **Install via Git URL**  
 3. 粘贴仓库地址：`https://github.com/JHBOY-ha/ComfyUI-performstat.git`  
-4. 安装完成后重启 ComfyUI。
+4. 安装完成后重启 ComfyUI  
 
 ## 使用说明
-
-添加节点：`Performance Stats (CPU/GPU)`，可将文本输出连接到文本显示节点。
 
 重启后会出现一个紧凑的悬浮监控窗（每 1 秒刷新），并始终置顶。  
 你可以用鼠标拖动、缩放悬浮窗，并按 `H` 快速显示/隐藏。

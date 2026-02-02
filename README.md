@@ -1,9 +1,9 @@
 # ComfyUI-performstat
 [中文文档](README_ZH.md)  
-Simple ComfyUI custom node that reports CPU, RAM, and GPU usage.
+Simple ComfyUI custom node that reports RAM and GPU usage.
 
   <img src="pic/example.png" width="250">  
-  
+
 ## Install
 
 ### Option 1: Git clone to `custom_nodes`
@@ -17,7 +17,7 @@ pip install -r requirements.txt
 
 Then restart ComfyUI.
 
-### Option 2: Install via ComfyUI Manager (GitHub URL)
+### Option 2: Install via ComfyUI Manager  
 
 1. Open **ComfyUI Manager**.
 2. Choose install from **Install via Git URL**.
@@ -25,8 +25,6 @@ Then restart ComfyUI.
 4. Install and restart ComfyUI.
 
 ## Usage
-
-Add node: `Performance Stats (CPU/GPU)` and connect its output to a text display node.
 
 Floating panel: after restart, a compact floating panel appears (1s refresh), always on top.
 You can drag and resize the panel with mouse, and press `H` to show/hide quickly.
