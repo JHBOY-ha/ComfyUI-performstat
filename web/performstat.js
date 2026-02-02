@@ -36,6 +36,20 @@ function writePos(x, y) {
   localStorage.setItem(STORE_PREFIX + "y", String(y));
 }
 
+function readSize() {
+  const width = Number(localStorage.getItem(STORE_PREFIX + "width"));
+  const height = Number(localStorage.getItem(STORE_PREFIX + "height"));
+  return {
+    width: Number.isFinite(width) ? width : 300,
+    height: Number.isFinite(height) ? height : 0,
+  };
+}
+
+function writeSize(width, height) {
+  localStorage.setItem(STORE_PREFIX + "width", String(width));
+  localStorage.setItem(STORE_PREFIX + "height", String(height));
+}
+
 function ensureStyle() {
   if (document.getElementById(STYLE_ID)) return;
   const style = document.createElement("style");
@@ -46,8 +60,10 @@ function ensureStyle() {
   left: 16px;
   top: 74px;
   z-index: 2147483647;
-  width: 420px;
-  max-width: min(420px, calc(100vw - 24px));
+  width: 300px;
+  max-width: calc(100vw - 12px);
+  min-width: 220px;
+  min-height: 72px;
   color: #dce5f1;
   background: rgba(8, 12, 20, 0.94);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -57,6 +73,8 @@ function ensureStyle() {
   font-size: 12px;
   letter-spacing: 0.1px;
   user-select: none;
+  resize: both;
+  overflow: hidden;
 }
 
 #${PANEL_ID}.ps-hidden {
@@ -67,7 +85,7 @@ function ensureStyle() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px;
+  padding: 5px 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   cursor: move;
   color: #9fb0c3;
@@ -80,14 +98,16 @@ function ensureStyle() {
 }
 
 #${PANEL_ID} .ps-body {
-  padding: 8px 10px 9px;
+  padding: 6px 8px 7px;
   display: grid;
-  gap: 8px;
+  gap: 6px;
+  height: calc(100% - 30px);
+  overflow: auto;
 }
 
 #${PANEL_ID} .ps-block {
   display: grid;
-  gap: 4px;
+  gap: 3px;
 }
 
 #${PANEL_ID} .ps-label {
@@ -101,7 +121,9 @@ function ensureStyle() {
 }
 
 #${PANEL_ID} .ps-bar {
-  height: 4px;
+  height: 3px;
+  width: 100%;
+  min-width: 0;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
   overflow: hidden;
@@ -120,16 +142,16 @@ function ensureStyle() {
 
 #${PANEL_ID} .ps-gpu-list {
   display: grid;
-  gap: 6px;
-  max-height: 220px;
+  gap: 4px;
+  max-height: 40vh;
   overflow: auto;
   padding-right: 4px;
 }
 
 #${PANEL_ID} .ps-gpu {
   display: grid;
-  gap: 3px;
-  padding: 4px 0;
+  gap: 2px;
+  padding: 3px 0;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
@@ -141,7 +163,7 @@ function ensureStyle() {
 #${PANEL_ID} .ps-row {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
 }
 
 #${PANEL_ID} .ps-name {
@@ -156,7 +178,8 @@ function ensureStyle() {
 
 @media (max-width: 640px) {
   #${PANEL_ID} {
-    width: calc(100vw - 16px);
+    width: calc(100vw - 12px);
+    resize: none;
   }
 }
 `;
@@ -171,7 +194,7 @@ function ensurePanel() {
   panel.innerHTML = `
     <div class="ps-head" data-ps="drag-handle">
       <div class="ps-title">PerformStat</div>
-      <div class="ps-meta">N: Show/Hide</div>
+      <div class="ps-meta">H: Show/Hide</div>
     </div>
     <div class="ps-body">
       <div class="ps-block" data-ps="memory-block">
@@ -186,10 +209,23 @@ function ensurePanel() {
     </div>
   `;
   document.body.appendChild(panel);
+  applySize(panel);
   applyPosition(panel);
   applyVisibility(panel);
   setupDrag(panel);
+  setupResize(panel);
   return panel;
+}
+
+function applySize(panel) {
+  const size = readSize();
+  const maxWidth = Math.max(220, window.innerWidth - 12);
+  const maxHeight = Math.max(90, window.innerHeight - 12);
+  const width = Math.max(220, Math.min(size.width, maxWidth));
+  panel.style.width = `${width}px`;
+  if (size.height > 90) {
+    panel.style.height = `${Math.min(size.height, maxHeight)}px`;
+  }
 }
 
 function applyPosition(panel) {
@@ -235,6 +271,22 @@ function setupDrag(panel) {
   });
 }
 
+function setupResize(panel) {
+  if (typeof ResizeObserver === "undefined") return;
+  let timer = null;
+  const observer = new ResizeObserver(() => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      writeSize(panel.offsetWidth, panel.offsetHeight);
+      const x = parseInt(panel.style.left || "16", 10);
+      const y = parseInt(panel.style.top || "74", 10);
+      writePos(x, y);
+      applyPosition(panel);
+    }, 120);
+  });
+  observer.observe(panel);
+}
+
 function applyVisibility(panel) {
   if (!panel) return;
   panel.classList.toggle("ps-hidden", !state.visible);
@@ -246,7 +298,7 @@ function applyVisibility(panel) {
 
 function setupHotkey() {
   window.addEventListener("keydown", (event) => {
-    if (event.key.toLowerCase() !== "n") return;
+    if (event.key.toLowerCase() !== "h") return;
     const tag = (document.activeElement?.tagName || "").toLowerCase();
     const editable = document.activeElement?.isContentEditable;
     if (tag === "input" || tag === "textarea" || editable) return;
@@ -388,14 +440,14 @@ function renderStats(data) {
 
     const gpuBarWrap = document.createElement("div");
     gpuBarWrap.className = "ps-bar";
-    gpuBarWrap.style.flex = "1";
+    gpuBarWrap.style.flex = "1 1 0";
     const gpuFill = document.createElement("div");
     gpuFill.className = "ps-fill ps-fill-gpu";
     gpuBarWrap.appendChild(gpuFill);
 
     const vramBarWrap = document.createElement("div");
     vramBarWrap.className = "ps-bar";
-    vramBarWrap.style.flex = "1";
+    vramBarWrap.style.flex = "1 1 0";
     const vramFill = document.createElement("div");
     vramFill.className = "ps-fill ps-fill-vram";
     vramBarWrap.appendChild(vramFill);
@@ -471,7 +523,11 @@ app.registerExtension({
     setupSettings();
     setupHotkey();
     ensurePanel();
-    window.addEventListener("resize", () => applyPosition(ensurePanel()));
+    window.addEventListener("resize", () => {
+      const panel = ensurePanel();
+      applySize(panel);
+      applyPosition(panel);
+    });
     await fetchStats();
     setInterval(fetchStats, REFRESH_MS);
   },
