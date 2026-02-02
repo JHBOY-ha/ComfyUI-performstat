@@ -57,6 +57,16 @@ body.ps-has-performstat.ps-fixed-mode {
   backdrop-filter: blur(6px);
 }
 
+#${BAR_ID}.ps-inline {
+  position: static;
+  margin-left: 10px;
+  width: min(620px, 44vw);
+  min-width: 360px;
+  padding: 6px 10px 7px;
+  border: 1px solid var(--ps-border);
+  border-radius: 12px;
+}
+
 #${BAR_ID}.ps-fixed {
   position: fixed;
   top: var(--ps-top-offset);
@@ -147,6 +157,11 @@ body.ps-has-performstat.ps-fixed-mode {
   #${BAR_ID} {
     grid-template-columns: 1fr;
   }
+  #${BAR_ID}.ps-inline {
+    width: min(96vw, 620px);
+    min-width: 0;
+    margin-left: 0;
+  }
   #${BAR_ID} .ps-bars {
     grid-template-columns: 1fr;
   }
@@ -180,17 +195,50 @@ function ensureBar() {
   return bar;
 }
 
-function mountBar(bar) {
-  const anchor = document.querySelector(
-    ".comfyui-menu, #comfyui-menu, .comfy-menu, .top-panel, header"
-  );
-  if (anchor && anchor.parentElement) {
-    anchor.insertAdjacentElement("afterend", bar);
-    bar.dataset.psMounted = "embedded";
-  } else {
-    document.body.appendChild(bar);
-    bar.dataset.psMounted = "fixed";
+function findWorkflowContainer() {
+  const selectors = [
+    ".comfyui-menu-right",
+    ".comfyui-workflow-controls",
+    ".comfyui-topbar-right",
+    ".comfy-menu-right",
+    ".top-right",
+    ".comfyui-menu",
+  ];
+  for (const selector of selectors) {
+    const el = document.querySelector(selector);
+    if (el) return el;
   }
+
+  const runLike = Array.from(document.querySelectorAll("button, div")).find((el) => {
+    const text = (el.textContent || "").trim();
+    return /^(run|queue|运行)$/i.test(text) || /(run|queue|运行)/i.test(text);
+  });
+  if (!runLike) return null;
+
+  let cur = runLike;
+  while (cur && cur !== document.body) {
+    const rect = cur.getBoundingClientRect();
+    if (rect.top < 140 && rect.height >= 36 && rect.height <= 120 && rect.width >= 400) {
+      return cur;
+    }
+    cur = cur.parentElement;
+  }
+  return null;
+}
+
+function mountBar(bar) {
+  const workflowContainer = findWorkflowContainer();
+  if (workflowContainer) {
+    workflowContainer.appendChild(bar);
+    bar.dataset.psMounted = "inline";
+    bar.classList.add("ps-inline");
+    bar.classList.remove("ps-fixed");
+    return;
+  }
+
+  document.body.appendChild(bar);
+  bar.dataset.psMounted = "fixed";
+  bar.classList.remove("ps-inline");
 }
 
 function getTopOffset() {
@@ -213,6 +261,7 @@ function applyLayoutMode(bar) {
   bar.classList.remove("ps-fixed");
 
   if (bar.dataset.psMounted !== "fixed") {
+    document.body.classList.remove("ps-fixed-mode");
     return;
   }
 
@@ -247,6 +296,8 @@ function applyVisibility() {
       "ps-fixed-mode",
       state.enabled && bar.classList.contains("ps-fixed")
     );
+  } else {
+    document.body.classList.remove("ps-fixed-mode");
   }
 }
 
@@ -435,10 +486,14 @@ function renderStats(data) {
         vramBar.style.display = "none";
       }
       const parts = [];
+      const statusLabel = gpu.status ? `status ${gpu.status}` : null;
+      if (statusLabel) {
+        parts.push(statusLabel);
+      }
       if (state.showGpu) parts.push(`GPU ${formatPercent(gpu.util_gpu)}`);
       if (state.showVram) parts.push(`VRAM ${vramPct.toFixed(1)}%`);
       if (state.showTemp) {
-        parts.push(gpu.temp == null ? "temp N/A" : `${gpu.temp}C`);
+        parts.push(gpu.temp == null ? "temp --" : `${gpu.temp.toFixed(1)}C`);
       }
       meta.textContent = parts.join(" · ");
     } else {
@@ -480,6 +535,14 @@ app.registerExtension({
       applyLayoutMode(ensureBar());
       applyVisibility();
     });
+    setTimeout(() => {
+      const bar = ensureBar();
+      if (bar.dataset.psMounted === "fixed") {
+        mountBar(bar);
+        applyLayoutMode(bar);
+        applyVisibility();
+      }
+    }, 1500);
     await fetchStats();
     setInterval(fetchStats, REFRESH_MS);
   },

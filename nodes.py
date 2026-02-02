@@ -49,7 +49,9 @@ def _apple_ioreg_stats():
     if util_match:
         data["util_gpu"] = float(util_match.group(1))
     if temp_match:
-        data["temp"] = float(temp_match.group(1))
+        temp_raw = float(temp_match.group(1))
+        # Some macOS builds report millidegrees.
+        data["temp"] = temp_raw / 1000.0 if temp_raw > 200 else temp_raw
     return data
 
 
@@ -184,15 +186,21 @@ def _gpu_stats_struct():
             vram_pct = (vram_used / vram_total * 100.0) if vram_total > 0 else 0.0
 
             extra = _apple_ioreg_stats()
+            util_gpu = extra.get("util_gpu")
+            if util_gpu is None and vram_pct > 1.0:
+                # Fallback when macOS does not expose GPU utilization directly.
+                util_gpu = min(100.0, max(0.0, vram_pct))
+            status = "active" if (util_gpu or 0.0) > 5.0 or allocated > 0 else "idle"
             gpu = {
                 "index": 0,
                 "name": "Apple M-Series GPU (MPS)",
-                "util_gpu": extra.get("util_gpu"),
+                "util_gpu": util_gpu,
                 "util_mem": vram_pct,
                 "vram_used": vram_used,
                 "vram_total": vram_total,
                 "temp": extra.get("temp"),
                 "allocated": allocated,
+                "status": status,
             }
             return {"provider": "apple_mps", "gpus": [gpu]}
 
