@@ -1,7 +1,9 @@
 # ComfyUI-performstat
-
+[中文文档](README_ZH.md)  
 Simple ComfyUI custom node that reports CPU, RAM, and GPU usage.
 
+  <img src="pic/example.png" width="250">  
+  
 ## Install
 
 ### Option 1: Git clone to `custom_nodes`
