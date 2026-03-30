@@ -27,7 +27,7 @@ pip install -r requirements.txt
 ## 使用说明
 
 重启后会出现一个紧凑的悬浮监控窗（每 1 秒刷新），并始终置顶。  
-你可以用鼠标拖动、缩放悬浮窗，并按 `H` 快速显示/隐藏。
+你可以用鼠标拖动、缩放悬浮窗，并按 `Y` 快速显示/隐藏。
 
 可在 ComfyUI 设置中控制显示项：
 - PerformStat: Enable Top Bar

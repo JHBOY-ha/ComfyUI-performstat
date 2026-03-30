@@ -212,7 +212,7 @@ function ensurePanel() {
   panel.innerHTML = `
     <div class="ps-head" data-ps="drag-handle">
       <div class="ps-title">PerformStat</div>
-      <div class="ps-meta">H: Show/Hide</div>
+      <div class="ps-meta">Y: Show/Hide</div>
     </div>
     <div class="ps-body">
       <div class="ps-block" data-ps="memory-block">
@@ -316,7 +316,7 @@ function applyVisibility(panel) {
 
 function setupHotkey() {
   window.addEventListener("keydown", (event) => {
-    if (event.key.toLowerCase() !== "h") return;
+    if (event.key.toLowerCase() !== "y") return;
     const tag = (document.activeElement?.tagName || "").toLowerCase();
     const editable = document.activeElement?.isContentEditable;
     if (tag === "input" || tag === "textarea" || editable) return;
